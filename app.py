@@ -69,7 +69,7 @@ def index():
         priorities=PRIORITIES,
         status_filter=status_filter,
         priority_filter=priority_filter,
-        today=date.today().isoformat(),
+        today=date.today(),
     )
 
 
