@@ -146,7 +146,33 @@ def analyze():
     return jsonify({"summary": summary})
 
 
-init_db()
+@app.route("/health")
+def health():
+    import traceback
+    result = {}
+    result["DATABASE_URL_set"] = bool(os.environ.get("DATABASE_URL"))
+    result["OPENAI_API_KEY_set"] = bool(os.environ.get("OPENAI_API_KEY"))
+    result["DATABASE_URL_prefix"] = (os.environ.get("DATABASE_URL") or "")[:30]
+    try:
+        with get_db() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT 1")
+        result["db"] = "OK"
+    except Exception as e:
+        result["db"] = str(e)
+    return jsonify(result)
+
+
+@app.errorhandler(500)
+def server_error(e):
+    import traceback
+    return f"<pre>{traceback.format_exc()}</pre>", 500
+
+
+try:
+    init_db()
+except Exception as e:
+    print(f"init_db error: {e}")
 
 if __name__ == "__main__":
     app.run()
