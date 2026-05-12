@@ -204,6 +204,36 @@
         .tag-active { background: #0369a1; color: white; }
         .tags-wrap { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 3px; }
 
+        /* Search */
+        .search-wrap { display: flex; gap: 8px; align-items: center; margin-bottom: 12px; }
+        .search-input {
+            flex: 1;
+            padding: 9px 14px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            font-size: 0.9rem;
+        }
+        .search-input:focus { outline: none; border-color: #4a90e2; }
+        .btn-ai-search {
+            background: #7c3aed;
+            color: white;
+            padding: 9px 14px;
+            font-size: 0.85rem;
+            white-space: nowrap;
+        }
+        .btn-ai-search:disabled { opacity: 0.6; cursor: not-allowed; }
+        .ai-search-note {
+            font-size: 0.78rem;
+            color: #888;
+            padding: 6px 12px;
+            background: #f5f3ff;
+            border-radius: 6px;
+            margin-bottom: 10px;
+            display: none;
+        }
+        tr.ai-match td { background: #fdf4ff !important; }
+        tr.ai-no-match { opacity: 0.3; }
+
         /* ── Tablet / landscape phone: таблица скроллится ─────── */
         @media (max-width: 1024px) {
             .table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
@@ -364,6 +394,20 @@
     </form>
 </div>
 
+<!-- Поиск -->
+<div class="card">
+    <form class="search-wrap" method="get" id="searchForm">
+        <input type="text" class="search-input" name="q" id="searchInput"
+               value="{{ search_query }}" placeholder="Поиск по задачам..."
+               autocomplete="off">
+        <input type="hidden" name="status" value="{{ status_filter }}">
+        <input type="hidden" name="priority" value="{{ priority_filter }}">
+        <input type="hidden" name="tag" value="{{ tag_filter }}">
+        <button type="button" class="btn-ai-search" id="aiSearchBtn" onclick="runAiSearch()">🔮 AI поиск</button>
+    </form>
+    <div class="ai-search-note" id="aiSearchNote"></div>
+</div>
+
 <!-- Фильтры -->
 <div class="card">
     <form class="filters" method="get">
@@ -482,6 +526,59 @@
 </div>
 
 <script>
+// ── Поиск ──────────────────────────────────────────────────
+let searchTimer = null;
+document.getElementById("searchInput").addEventListener("input", function() {
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(() => {
+        document.getElementById("searchForm").submit();
+    }, 500);
+});
+
+async function runAiSearch() {
+    const query = document.getElementById("searchInput").value.trim();
+    if (!query) return;
+
+    const btn = document.getElementById("aiSearchBtn");
+    const note = document.getElementById("aiSearchNote");
+    btn.disabled = true;
+    btn.textContent = "Ищу...";
+    note.style.display = "none";
+
+    // сбрасываем предыдущую подсветку
+    document.querySelectorAll("tbody tr").forEach(tr => {
+        tr.classList.remove("ai-match", "ai-no-match");
+    });
+
+    try {
+        const res = await fetch("/ai-search", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ query }),
+        });
+        const data = await res.json();
+        const ids = new Set((data.ids || []).map(String));
+
+        document.querySelectorAll("tbody tr").forEach(tr => {
+            const id = tr.querySelector("td")?.textContent?.trim();
+            if (ids.has(id)) {
+                tr.classList.add("ai-match");
+            } else {
+                tr.classList.add("ai-no-match");
+            }
+        });
+
+        note.textContent = "🔮 " + (data.explanation || "AI поиск выполнен");
+        note.style.display = "block";
+    } catch(e) {
+        note.textContent = "Ошибка AI поиска";
+        note.style.display = "block";
+    } finally {
+        btn.disabled = false;
+        btn.textContent = "🔮 AI поиск";
+    }
+}
+
 // ── Теги: автоподсказки ────────────────────────────────────
 let allTags = [];
 fetch("/tags").then(r => r.json()).then(tags => {

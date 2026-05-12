@@ -162,6 +162,7 @@ def index():
     status_filter = request.args.get("status", "")
     priority_filter = request.args.get("priority", "")
     tag_filter = request.args.get("tag", "")
+    search_query = request.args.get("q", "").strip()
 
     query = "SELECT * FROM tasks WHERE 1=1"
     params = []
@@ -175,6 +176,9 @@ def index():
     if tag_filter:
         query += " AND tags ILIKE %s"
         params.append(f"%{tag_filter}%")
+    if search_query:
+        query += " AND (title ILIKE %s OR description ILIKE %s OR project ILIKE %s OR tags ILIKE %s)"
+        params.extend([f"%{search_query}%"] * 4)
 
     query += """
         ORDER BY
@@ -196,6 +200,7 @@ def index():
         status_filter=status_filter,
         priority_filter=priority_filter,
         tag_filter=tag_filter,
+        search_query=search_query,
         today=date.today(),
         parse_tags=parse_tags,
     )
@@ -319,6 +324,52 @@ def voice():
     fields = json.loads(response.choices[0].message.content)
     fields["transcript"] = text
     return jsonify(fields)
+
+
+@app.route("/ai-search", methods=["POST"])
+def ai_search():
+    query = (request.json or {}).get("query", "").strip()
+    if not query:
+        return jsonify({"ids": [], "explanation": "Пустой запрос"}), 400
+
+    with get_db() as conn:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute("SELECT id, title, status, priority, deadline, description, project, tags FROM tasks ORDER BY created_at")
+            tasks = cur.fetchall()
+
+    if not tasks:
+        return jsonify({"ids": [], "explanation": "Задач нет"})
+
+    tasks_text = "\n".join([
+        f"[{t['id']}] «{t['title']}»"
+        + (f" | проект: {t['project']}" if t['project'] else "")
+        + (f" | теги: {t['tags']}" if t['tags'] else "")
+        + (f" | {t['description'][:100]}" if t['description'] else "")
+        + f" | {t['status']} | {t['priority']}"
+        for t in tasks
+    ])
+
+    response = openai_client.chat.completions.create(
+        model="gpt-4o",
+        messages=[
+            {
+                "role": "system",
+                "content": (
+                    "Ты помощник для поиска задач. Найди задачи, которые соответствуют запросу по смыслу. "
+                    "Верни JSON: {\"ids\": [список id], \"explanation\": \"краткое объяснение на русском\"}. "
+                    "ids — массив числовых id подходящих задач. Если ничего не найдено — пустой массив."
+                )
+            },
+            {
+                "role": "user",
+                "content": f"Запрос: «{query}»\n\nЗадачи:\n{tasks_text}"
+            }
+        ],
+        response_format={"type": "json_object"},
+    )
+
+    result = json.loads(response.choices[0].message.content)
+    return jsonify(result)
 
 
 @app.route("/digest", methods=["POST"])
