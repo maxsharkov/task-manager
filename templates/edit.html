@@ -56,6 +56,15 @@
         .btn-save   { background: #4a90e2; color: white; }
         .btn-cancel { background: #f0f0f0; color: #333; text-decoration: none; display: inline-flex; align-items: center; }
         button:hover, .btn-cancel:hover { opacity: 0.85; }
+
+        @media (max-width: 640px) {
+            body { padding: 12px; }
+            .card { padding: 16px; }
+            .row2 { grid-template-columns: 1fr; }
+            .btn-save { width: 100%; justify-content: center; }
+            .btn-cancel { width: 100%; justify-content: center; }
+            .actions { flex-direction: column; }
+        }
     </style>
 </head>
 <body>

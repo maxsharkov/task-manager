@@ -186,6 +186,64 @@
         }
 
         .action-btns { display: flex; gap: 6px; }
+
+        /* ── Mobile ─────────────────────────────────────────── */
+        @media (max-width: 640px) {
+            body { padding: 12px; }
+            h1 { font-size: 1.25rem; margin-bottom: 16px; }
+
+            .card { padding: 14px; }
+
+            /* Форма — одна колонка */
+            .add-form {
+                grid-template-columns: 1fr 1fr;
+            }
+            .add-form .field:first-child { grid-column: 1 / -1; }
+            .add-form .field:last-child  { grid-column: 1 / -1; }
+            .add-form-row2 { grid-template-columns: 1fr; }
+
+            /* Кнопки — полная ширина */
+            .btn-add { width: 100%; }
+            .btn-analyze, .btn-digest-daily, .btn-digest-weekly {
+                width: 100%; justify-content: center;
+            }
+            .btn-voice { width: 100%; justify-content: center; }
+
+            /* Таблица → карточки */
+            table thead { display: none; }
+            table tbody tr {
+                display: block;
+                border: 1px solid #eee;
+                border-radius: 8px;
+                margin-bottom: 12px;
+                padding: 10px 12px;
+            }
+            table tbody tr:hover td { background: transparent; }
+            table td {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                padding: 5px 0;
+                border-bottom: 1px solid #f5f5f5;
+                font-size: 0.85rem;
+            }
+            table td:last-child { border-bottom: none; padding-top: 8px; }
+            table td[data-label]::before {
+                content: attr(data-label);
+                font-size: 0.7rem;
+                color: #aaa;
+                font-weight: 600;
+                text-transform: uppercase;
+                letter-spacing: 0.04em;
+                flex-shrink: 0;
+                margin-right: 8px;
+            }
+            /* скрываем колонку # на мобильном */
+            table td:first-child { display: none; }
+
+            .status-form { flex-wrap: wrap; justify-content: flex-end; }
+            .action-btns { justify-content: flex-end; }
+        }
     </style>
 </head>
 <body>
@@ -316,26 +374,26 @@
         {% for task in tasks %}
             <tr>
                 <td style="color:#aaa; font-size:0.85rem;">{{ task.id }}</td>
-                <td>
+                <td data-label="Задача">
                     <div>{{ task.title }}</div>
                     {% if task.description %}
                     <div class="task-desc">{{ task.description[:80] }}{% if task.description|length > 80 %}…{% endif %}</div>
                     {% endif %}
                 </td>
-                <td>
+                <td data-label="Проект">
                     {% if task.project %}
                     <span class="task-project">{{ task.project }}</span>
                     {% else %}
                     <span style="color:#ccc;">—</span>
                     {% endif %}
                 </td>
-                <td>
+                <td data-label="Приоритет">
                     <span class="badge priority-{{ task.priority }}">{{ task.priority }}</span>
                 </td>
-                <td>
+                <td data-label="Усилия">
                     <span class="badge energy-{{ task.energy }}">{{ task.energy }}</span>
                 </td>
-                <td>
+                <td data-label="Статус">
                     <form class="status-form" action="/update/{{ task.id }}" method="post">
                         <select name="status">
                             {% for s in statuses %}
@@ -345,7 +403,7 @@
                         <button type="submit" class="btn-status">✓</button>
                     </form>
                 </td>
-                <td>
+                <td data-label="Дедлайн">
                     {% if task.deadline %}
                         <span class="{% if task.deadline < today and task.status != 'Завершена' %}deadline-overdue{% endif %}">
                             {{ task.deadline }}
@@ -354,7 +412,7 @@
                         <span style="color:#ccc;">—</span>
                     {% endif %}
                 </td>
-                <td style="color:#aaa; font-size:0.85rem;">{{ task.created_at }}</td>
+                <td data-label="Создана" style="color:#aaa; font-size:0.85rem;">{{ task.created_at }}</td>
                 <td>
                     <div class="action-btns">
                         <a href="/edit/{{ task.id }}" class="btn-edit">✎</a>
