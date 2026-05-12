@@ -50,6 +50,7 @@ def init_db():
             cur.execute("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS description TEXT")
             cur.execute("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS project TEXT")
             cur.execute("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS energy TEXT NOT NULL DEFAULT 'Средняя'")
+            cur.execute("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS tags TEXT")
 
 
 def send_telegram(text):
@@ -133,10 +134,34 @@ scheduler.add_job(weekly_digest, CronTrigger(day_of_week="sun", hour=20, minute=
 scheduler.start()
 
 
+def parse_tags(raw):
+    if not raw:
+        return []
+    return [t.strip().lstrip("#") for t in raw.replace(",", " ").split() if t.strip()]
+
+
+def normalize_tags(raw):
+    tags = parse_tags(raw)
+    return ",".join(tags) if tags else None
+
+
+@app.route("/tags")
+def get_tags():
+    with get_db() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT tags FROM tasks WHERE tags IS NOT NULL AND tags != ''")
+            rows = cur.fetchall()
+    all_tags = set()
+    for row in rows:
+        all_tags.update(parse_tags(row[0]))
+    return jsonify(sorted(all_tags))
+
+
 @app.route("/")
 def index():
     status_filter = request.args.get("status", "")
     priority_filter = request.args.get("priority", "")
+    tag_filter = request.args.get("tag", "")
 
     query = "SELECT * FROM tasks WHERE 1=1"
     params = []
@@ -147,6 +172,9 @@ def index():
     if priority_filter:
         query += " AND priority = %s"
         params.append(priority_filter)
+    if tag_filter:
+        query += " AND tags ILIKE %s"
+        params.append(f"%{tag_filter}%")
 
     query += """
         ORDER BY
@@ -167,7 +195,9 @@ def index():
         energies=ENERGIES,
         status_filter=status_filter,
         priority_filter=priority_filter,
+        tag_filter=tag_filter,
         today=date.today(),
+        parse_tags=parse_tags,
     )
 
 
@@ -183,12 +213,13 @@ def add():
     description = request.form.get("description", "").strip() or None
     project = request.form.get("project", "").strip() or None
     energy = request.form.get("energy", "Средняя")
+    tags = normalize_tags(request.form.get("tags", ""))
 
     with get_db() as conn:
         with conn.cursor() as cur:
             cur.execute(
-                "INSERT INTO tasks (title, status, priority, deadline, description, project, energy) VALUES (%s, %s, %s, %s, %s, %s, %s)",
-                (title, status, priority, deadline, description, project, energy),
+                "INSERT INTO tasks (title, status, priority, deadline, description, project, energy, tags) VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
+                (title, status, priority, deadline, description, project, energy, tags),
             )
     return redirect(url_for("index"))
 
@@ -210,7 +241,7 @@ def edit(task_id):
             task = cur.fetchone()
     if not task:
         return redirect(url_for("index"))
-    return render_template("edit.html", task=task, statuses=STATUSES, priorities=PRIORITIES, energies=ENERGIES, today=date.today())
+    return render_template("edit.html", task=task, statuses=STATUSES, priorities=PRIORITIES, energies=ENERGIES, today=date.today(), parse_tags=parse_tags)
 
 
 @app.route("/edit/<int:task_id>", methods=["POST"])
@@ -225,12 +256,13 @@ def edit_save(task_id):
     description = request.form.get("description", "").strip() or None
     project = request.form.get("project", "").strip() or None
     energy = request.form.get("energy", "Средняя")
+    tags = normalize_tags(request.form.get("tags", ""))
 
     with get_db() as conn:
         with conn.cursor() as cur:
             cur.execute(
-                "UPDATE tasks SET title=%s, status=%s, priority=%s, deadline=%s, description=%s, project=%s, energy=%s WHERE id=%s",
-                (title, status, priority, deadline, description, project, energy, task_id),
+                "UPDATE tasks SET title=%s, status=%s, priority=%s, deadline=%s, description=%s, project=%s, energy=%s, tags=%s WHERE id=%s",
+                (title, status, priority, deadline, description, project, energy, tags, task_id),
             )
     return redirect(url_for("index"))
 
@@ -270,7 +302,8 @@ def voice():
                     "deadline (дата YYYY-MM-DD или null), "
                     "description (краткое описание или контекст задачи, строка или null), "
                     "project (название проекта или направления, строка или null), "
-                    "energy (одно из: Лёгкая, Средняя, Тяжёлая — оцени по сложности задачи). "
+                    "energy (одно из: Лёгкая, Средняя, Тяжёлая — оцени по сложности задачи), "
+                    "tags (строка тегов через запятую, без #, или null — извлеки из контекста: команда, звонок, встреча, отчёт и т.п.). "
                     "Если приоритет не упомянут — Средний. Если статус не упомянут — Новая. "
                     "Если энергия не упомянута — оцени самостоятельно по смыслу задачи."
                 )

@@ -187,6 +187,23 @@
 
         .action-btns { display: flex; gap: 6px; }
 
+        /* Tags */
+        .tag {
+            display: inline-block;
+            background: #e0f2fe;
+            color: #0369a1;
+            border-radius: 10px;
+            padding: 1px 8px;
+            font-size: 0.72rem;
+            font-weight: 500;
+            cursor: pointer;
+            text-decoration: none;
+            white-space: nowrap;
+        }
+        .tag:hover { background: #bae6fd; }
+        .tag-active { background: #0369a1; color: white; }
+        .tags-wrap { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 3px; }
+
         /* ── Tablet / landscape phone: таблица скроллится ─────── */
         @media (max-width: 1024px) {
             .table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
@@ -335,9 +352,14 @@
                 <input type="text" name="project" id="fieldProject" placeholder="например: Стратегия 2026, Билайн Восток...">
             </div>
             <div class="field">
-                <label>Описание / контекст</label>
-                <textarea name="description" id="fieldDescription" placeholder="Детали, ссылки, контекст..."></textarea>
+                <label>Теги (через запятую или пробел)</label>
+                <input type="text" name="tags" id="fieldTags" placeholder="#команда #звонок срочно..." autocomplete="off">
+                <div id="tagSuggestions" style="display:none; margin-top:4px; display:flex; flex-wrap:wrap; gap:4px;"></div>
             </div>
+        </div>
+        <div class="field" style="margin-top:10px;">
+            <label>Описание / контекст</label>
+            <textarea name="description" id="fieldDescription" placeholder="Детали, ссылки, контекст..."></textarea>
         </div>
     </form>
 </div>
@@ -361,7 +383,12 @@
             {% endfor %}
         </select>
 
-        {% if status_filter or priority_filter %}
+        {% if tag_filter %}
+        <label>Тег:</label>
+        <span class="tag tag-active">#{{ tag_filter }}</span>
+        {% endif %}
+
+        {% if status_filter or priority_filter or tag_filter %}
         <a href="/">✕ Сбросить</a>
         {% endif %}
     </form>
@@ -391,6 +418,13 @@
                 <td style="color:#aaa; font-size:0.85rem;">{{ task.id }}</td>
                 <td data-label="Задача">
                     <div>{{ task.title }}</div>
+                    {% if task.tags %}
+                    <div class="tags-wrap">
+                        {% for tag in parse_tags(task.tags) %}
+                        <a href="/?tag={{ tag }}&status={{ status_filter }}&priority={{ priority_filter }}" class="tag {% if tag == tag_filter %}tag-active{% endif %}">#{{ tag }}</a>
+                        {% endfor %}
+                    </div>
+                    {% endif %}
                     {% if task.description %}
                     <div class="task-desc">{{ task.description[:80] }}{% if task.description|length > 80 %}…{% endif %}</div>
                     {% endif %}
@@ -448,6 +482,33 @@
 </div>
 
 <script>
+// ── Теги: автоподсказки ────────────────────────────────────
+let allTags = [];
+fetch("/tags").then(r => r.json()).then(tags => {
+    allTags = tags;
+    renderTagSuggestions(document.getElementById("fieldTags"));
+});
+
+function renderTagSuggestions(input) {
+    const box = document.getElementById("tagSuggestions");
+    if (!allTags.length) return;
+    box.innerHTML = "";
+    allTags.forEach(tag => {
+        const chip = document.createElement("span");
+        chip.className = "tag";
+        chip.textContent = "#" + tag;
+        chip.onclick = () => {
+            const cur = input.value.trim();
+            const existing = cur ? cur.split(/[\s,]+/).map(t => t.replace(/^#/, "")) : [];
+            if (!existing.includes(tag)) {
+                input.value = (cur ? cur + " " : "") + "#" + tag;
+            }
+            input.focus();
+        };
+        box.appendChild(chip);
+    });
+}
+
 // ── Дайджест в Telegram ────────────────────────────────────
 async function sendDigest(type) {
     const dailyBtn  = document.getElementById("digestDailyBtn");
@@ -586,6 +647,10 @@ async function sendAudio() {
 
         if (data.deadline) {
             document.getElementById("fieldDeadline").value = data.deadline;
+        }
+
+        if (data.tags) {
+            document.getElementById("fieldTags").value = data.tags;
         }
 
         preview.textContent = "🎙 «" + data.transcript + "»";

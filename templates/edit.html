@@ -119,6 +119,18 @@
         </div>
 
         <div class="field">
+            <label>Теги (через запятую или пробел)</label>
+            <input type="text" name="tags" value="{{ task.tags or '' }}" placeholder="#команда #звонок срочно...">
+            {% if task.tags %}
+            <div style="margin-top:5px; display:flex; flex-wrap:wrap; gap:4px;">
+                {% for tag in parse_tags(task.tags) %}
+                <span style="background:#e0f2fe;color:#0369a1;border-radius:10px;padding:1px 8px;font-size:0.72rem;font-weight:500;">#{{ tag }}</span>
+                {% endfor %}
+            </div>
+            {% endif %}
+        </div>
+
+        <div class="field">
             <label>Описание / контекст</label>
             <textarea name="description" placeholder="Детали, ссылки, контекст...">{{ task.description or '' }}</textarea>
         </div>
