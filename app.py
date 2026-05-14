@@ -319,12 +319,12 @@ def update(task_id):
             if now_completed and not was_completed and task["recurrence"]:
                 next_dl = calc_next_deadline(task["deadline"], task["recurrence"])
                 event_id = gcal.create_event(task["title"], next_dl, task["priority"],
-                                             task["project"], task["assignee"]) if next_dl else None
+                                             None, task["assignee"]) if next_dl else None
                 cur.execute(
-                    "INSERT INTO tasks (title, status, priority, deadline, project, energy,"
+                    "INSERT INTO tasks (title, status, priority, deadline, energy,"
                     " assignee, recurrence, calendar_event_id)"
-                    " VALUES (%s,'Новая',%s,%s,%s,%s,%s,%s,%s)",
-                    (task["title"], task["priority"], next_dl, task["project"],
+                    " VALUES (%s,'Новая',%s,%s,%s,%s,%s,%s)",
+                    (task["title"], task["priority"], next_dl,
                      task["energy"], task["assignee"], task["recurrence"], event_id)
                 )
     return redirect(url_for("index"))
@@ -391,10 +391,10 @@ def edit_save(task_id):
     with get_db() as conn:
         with conn.cursor() as cur:
             cur.execute(
-                "UPDATE tasks SET title=%s, status=%s, priority=%s, deadline=%s, project=%s,"
+                "UPDATE tasks SET title=%s, status=%s, priority=%s, deadline=%s,"
                 " energy=%s, assignee=%s, progress=%s, calendar_event_id=%s, recurrence=%s,"
                 " closed_at=%s, category=%s WHERE id=%s",
-                (title, status, priority, deadline, project, energy, assignee, progress,
+                (title, status, priority, deadline, energy, assignee, progress,
                  new_event_id, recurrence, closed_at, category, task_id),
             )
     return redirect(url_for("index"))
@@ -537,20 +537,18 @@ def process_bot_message(text):
         title = t.get("title", "Без названия")
         deadline = t.get("deadline") or None
         priority = t.get("priority", "Средний")
-        project = t.get("project") or None
         assignee = t.get("assignee") or None
-        event_id = gcal.create_event(title, deadline, priority, project, assignee) if deadline else None
+        event_id = gcal.create_event(title, deadline, priority, None, assignee) if deadline else None
         with get_db() as conn:
             with conn.cursor() as cur:
                 cur.execute(
-                    "INSERT INTO tasks (title, status, priority, deadline, project, energy, assignee, calendar_event_id)"
-                    " VALUES (%s,%s,%s,%s,%s,%s,%s,%s)",
+                    "INSERT INTO tasks (title, status, priority, deadline, energy, assignee, calendar_event_id)"
+                    " VALUES (%s,%s,%s,%s,%s,%s,%s)",
                     (
                         title,
                         t.get("status", "Новая"),
                         priority,
                         deadline,
-                        project,
                         t.get("energy", "Средняя"),
                         assignee,
                         event_id,
