@@ -373,9 +373,9 @@ def edit_save(task_id):
 
     if deadline:
         if existing_event_id:
-            gcal.update_event(existing_event_id, title, deadline, priority, project, assignee)
+            gcal.update_event(existing_event_id, title, deadline, priority, None, assignee)
         else:
-            new_event_id = gcal.create_event(title, deadline, priority, project, assignee)
+            new_event_id = gcal.create_event(title, deadline, priority, None, assignee)
     else:
         if existing_event_id:
             gcal.delete_event(existing_event_id)
