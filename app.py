@@ -457,6 +457,20 @@ def strategy_log(goal_id):
     return redirect("/?tab=strategy")
 
 
+@app.route("/strategy/edit/<int:goal_id>", methods=["POST"])
+def strategy_edit(goal_id):
+    title = request.form.get("title", "").strip()
+    area = request.form.get("area", "")
+    if title:
+        with get_db() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "UPDATE strategic_goals SET title=%s, area=%s WHERE id=%s",
+                    (title, area, goal_id)
+                )
+    return redirect("/?tab=strategy")
+
+
 @app.route("/strategy/delete/<int:goal_id>", methods=["POST"])
 def strategy_delete(goal_id):
     with get_db() as conn:

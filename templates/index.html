@@ -844,6 +844,7 @@
             {% endif %}
             <div class="goal-footer">
                 <button class="btn-log" onclick="toggleLogForm({{ g.id }})">+ Запись</button>
+                <button class="btn-edit" onclick="toggleEditForm({{ g.id }})">✎ Изменить</button>
                 <form action="/strategy/delete/{{ g.id }}" method="post"
                       onsubmit="return confirm('Удалить цель «{{ g.title }}»?')">
                     <button type="submit" class="btn-delete">✕</button>
@@ -853,6 +854,28 @@
                 <form action="/strategy/log/{{ g.id }}" method="post">
                     <textarea name="text" placeholder="Что сделано, что понял, что дальше..."></textarea>
                     <button type="submit" class="btn-log-save">Сохранить запись</button>
+                </form>
+            </div>
+            <div class="log-form-wrap" id="edit-form-{{ g.id }}" style="display:none;">
+                <form action="/strategy/edit/{{ g.id }}" method="post">
+                    <div style="display:flex; gap:8px; align-items:flex-end; flex-wrap:wrap;">
+                        <div class="field" style="flex:1;">
+                            <label>Название</label>
+                            <input type="text" name="title" value="{{ g.title }}" required>
+                        </div>
+                        <div class="field">
+                            <label>Направление</label>
+                            <select name="area">
+                                {% for a in strategic_areas %}
+                                <option value="{{ a }}" {% if a == g.area %}selected{% endif %}>{{ a }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="field">
+                            <label>&nbsp;</label>
+                            <button type="submit" class="btn-log-save">Сохранить</button>
+                        </div>
+                    </div>
                 </form>
             </div>
         </div>
@@ -1038,13 +1061,23 @@ function toggleGroup(gid) {
     groupState[gid] = !collapsed;
 }
 
-// ── Стратегия: форма записи ────────────────────────────────
+// ── Стратегия: формы записи и редактирования ──────────────
 function toggleLogForm(goalId) {
     const form = document.getElementById('log-form-' + goalId);
     if (!form) return;
     const visible = form.style.display !== 'none';
+    document.getElementById('edit-form-' + goalId).style.display = 'none';
     form.style.display = visible ? 'none' : 'block';
     if (!visible) form.querySelector('textarea').focus();
+}
+
+function toggleEditForm(goalId) {
+    const form = document.getElementById('edit-form-' + goalId);
+    if (!form) return;
+    const visible = form.style.display !== 'none';
+    document.getElementById('log-form-' + goalId).style.display = 'none';
+    form.style.display = visible ? 'none' : 'block';
+    if (!visible) form.querySelector('input[name="title"]').focus();
 }
 
 // ── Service Worker ─────────────────────────────────────────
