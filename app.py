@@ -153,7 +153,9 @@ def send_telegram(text):
 
 
 def build_digest(digest_type="daily"):
-    today = date.today().isoformat()
+    today = date.today()
+    today_str = today.isoformat()
+    week_ago = (today - timedelta(days=7)).isoformat()
 
     with get_db() as conn:
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
@@ -168,24 +170,39 @@ def build_digest(digest_type="daily"):
         line = f"- [{t['category'] or '?'}] «{t['title']}»"
         if t['deadline']:
             line += f" | дедлайн: {t['deadline']}"
+        if t['closed_at']:
+            line += f" | закрыта: {t['closed_at']}"
         if t['assignee']:
             line += f" | {t['assignee']}"
         if t['progress']:
             line += f" | прогресс: {t['progress'][:60]}"
         return line
 
-    closed_today = [t for t in tasks if t['closed_at'] and str(t['closed_at'])[:10] == today]
-    overdue = [t for t in tasks if t['status'] != 'Завершена' and t['deadline'] and str(t['deadline']) < today]
+    if digest_type == "weekly":
+        closed_period = [t for t in tasks
+                         if t['closed_at'] and str(t['closed_at'])[:10] >= week_ago]
+        period_label = "за последние 7 дней"
+        header = "📊 *Итоги недели — оценка выполнения обещаний*"
+        period = "за эту неделю"
+    else:
+        closed_period = [t for t in tasks
+                         if t['closed_at'] and str(t['closed_at'])[:10] == today_str]
+        period_label = "за сегодня"
+        header = "🌙 *Дайджест — оценка выполнения обещаний*"
+        period = "за сегодня"
+
+    overdue = [t for t in tasks if t['status'] != 'Завершена' and t['deadline']
+               and str(t['deadline']) < today_str]
     active_hp = [t for t in tasks if t['status'] != 'Завершена' and t['priority'] == 'Высокий'
-                 and (not t['deadline'] or str(t['deadline']) >= today)]
+                 and (not t['deadline'] or str(t['deadline']) >= today_str)]
 
     sections = []
     sections.append(
-        "✅ Завершено сегодня:\n" + "\n".join(fmt(t) for t in closed_today)
-        if closed_today else "✅ Завершено сегодня: ничего"
+        f"✅ Завершено {period_label}:\n" + "\n".join(fmt(t) for t in closed_period)
+        if closed_period else f"✅ Завершено {period_label}: ничего"
     )
     sections.append(
-        "🔴 Просрочено:\n" + "\n".join(fmt(t) for t in overdue)
+        "🔴 Просрочено (активные):\n" + "\n".join(fmt(t) for t in overdue)
         if overdue else "🔴 Просрочено: нет"
     )
     sections.append(
@@ -195,30 +212,25 @@ def build_digest(digest_type="daily"):
 
     tasks_structured = "\n\n".join(sections)
 
-    if digest_type == "weekly":
-        header = "📊 *Итоги недели — оценка выполнения обещаний*"
-        period = "за эту неделю"
-    else:
-        header = "🌙 *Дайджест — оценка выполнения обещаний*"
-        period = "за сегодня"
-
     prompt = f"""Ты жёсткий, честный коуч топ-менеджера. Без корпоративного языка, без комплиментов. Только факты и прямая оценка.
 
-Сегодня {today}. Задачи структурированы по факту:
+Сегодня {today_str}. Задачи структурированы по факту:
 
 {tasks_structured}
+
+ВАЖНО: раздел «Завершено» — это реально выполненные задачи. Учитывай их при выставлении оценки.
 
 Сделай оценку выполнения обещаний {period} по двум категориям.
 
 🏢 РАБОЧИЕ ЦЕЛИ (категория Работа)
-1. Что было обещано
-2. Что реально выполнено
+1. Что обещано / в работе
+2. Что реально выполнено (из раздела Завершено)
 3. Что просрочено или зависло
 4. Оценка: X/10
 
 👤 ЛИЧНЫЕ ЦЕЛИ (категория Личное)
-1. Что было обещано
-2. Что реально выполнено
+1. Что обещано / в работе
+2. Что реально выполнено (из раздела Завершено)
 3. Что просрочено или зависло
 4. Оценка: X/10
 
@@ -479,6 +491,32 @@ def strategy_delete(goal_id):
     return redirect("/?tab=strategy")
 
 
+@app.route("/gcal-resync", methods=["POST"])
+def gcal_resync():
+    """Пересоздаёт Calendar-события для активных повторяющихся задач с RRULE."""
+    updated = 0
+    with get_db() as conn:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute("""
+                SELECT id, title, deadline, priority, assignee, recurrence, calendar_event_id
+                FROM tasks
+                WHERE status != 'Завершена' AND recurrence IS NOT NULL AND deadline IS NOT NULL
+            """)
+            tasks = cur.fetchall()
+            for t in tasks:
+                if t["calendar_event_id"]:
+                    gcal.delete_event(t["calendar_event_id"])
+                new_id = gcal.create_event(
+                    t["title"], t["deadline"], t["priority"],
+                    None, t["assignee"], t["recurrence"]
+                )
+                cur.execute("UPDATE tasks SET calendar_event_id=%s WHERE id=%s",
+                            (new_id, t["id"]))
+                if new_id:
+                    updated += 1
+    return jsonify({"ok": True, "updated": updated})
+
+
 @app.route("/strategy/digest", methods=["POST"])
 def strategy_digest_manual():
     try:
@@ -532,25 +570,27 @@ def update(task_id):
             cur.execute("UPDATE tasks SET status=%s, closed_at=%s WHERE id=%s",
                         (status, closed_at, task_id))
 
-            if now_completed and not was_completed and task["recurrence"]:
-                next_dl = calc_next_deadline(task["deadline"], task["recurrence"])
+            if now_completed and not was_completed:
+                # Удаляем Calendar-событие завершённой задачи
                 if task["calendar_event_id"]:
                     gcal.delete_event(task["calendar_event_id"])
-                new_event_id = gcal.create_event(
-                    task["title"], next_dl, task["priority"],
-                    None, task["assignee"], task["recurrence"]
-                ) if next_dl else None
-                cur.execute(
-                    "UPDATE tasks SET calendar_event_id=NULL WHERE id=%s", (task_id,)
-                )
-                cur.execute(
-                    "INSERT INTO tasks (title, status, priority, deadline, energy,"
-                    " assignee, recurrence, calendar_event_id, category)"
-                    " VALUES (%s,'Новая',%s,%s,%s,%s,%s,%s,%s)",
-                    (task["title"], task["priority"], next_dl,
-                     task["energy"], task["assignee"], task["recurrence"],
-                     new_event_id, task["category"])
-                )
+                    cur.execute("UPDATE tasks SET calendar_event_id=NULL WHERE id=%s", (task_id,))
+
+                # Для повторяющихся — создаём следующий инстанс
+                if task["recurrence"]:
+                    next_dl = calc_next_deadline(task["deadline"], task["recurrence"])
+                    new_event_id = gcal.create_event(
+                        task["title"], next_dl, task["priority"],
+                        None, task["assignee"], task["recurrence"]
+                    ) if next_dl else None
+                    cur.execute(
+                        "INSERT INTO tasks (title, status, priority, deadline, energy,"
+                        " assignee, recurrence, calendar_event_id, category)"
+                        " VALUES (%s,'Новая',%s,%s,%s,%s,%s,%s,%s)",
+                        (task["title"], task["priority"], next_dl,
+                         task["energy"], task["assignee"], task["recurrence"],
+                         new_event_id, task["category"])
+                    )
     return redirect(url_for("index"))
 
 
@@ -609,6 +649,10 @@ def edit_save(task_id):
     if row:
         if status == "Завершена" and row["status"] != "Завершена":
             closed_at = date.today()
+            # Удаляем Calendar-событие при завершении через редактирование
+            if new_event_id:
+                gcal.delete_event(new_event_id)
+                new_event_id = None
         elif status == "Завершена":
             closed_at = row["closed_at"]
 

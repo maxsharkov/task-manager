@@ -501,6 +501,7 @@
         <button class="btn-analyze" id="analyzeBtn" onclick="analyzeTasks()">🤖 Анализ задач</button>
         <button class="btn-digest-daily" id="digestDailyBtn" onclick="sendDigest('daily')">📬 Дайджест сейчас</button>
         <button class="btn-digest-weekly" id="digestWeeklyBtn" onclick="sendDigest('weekly')">📊 Итоги недели</button>
+        <button style="background:rgba(0,0,0,0.05);color:#1d1d1f;" id="resyncBtn" onclick="resyncGcal()">🔄 Синхр. календарь</button>
         <span id="analyzeStatus" style="color:#6e6e73; font-size:0.82rem;"></span>
     </div>
     <div style="margin-top:8px; font-size:0.72rem; color:#6e6e73; letter-spacing:0.01em;">
@@ -955,6 +956,24 @@ async function sendDigest(type) {
     finally {
         dailyBtn.disabled = false; weeklyBtn.disabled = false;
         setTimeout(() => { statusEl.textContent = ""; }, 3500);
+    }
+}
+
+// ── Синхронизация Google Calendar ─────────────────────────
+async function resyncGcal() {
+    const btn = document.getElementById("resyncBtn");
+    const statusEl = document.getElementById("analyzeStatus");
+    btn.disabled = true; statusEl.textContent = "Синхронизирую...";
+    try {
+        const res  = await fetch("/gcal-resync", { method:"POST" });
+        const data = await res.json();
+        statusEl.textContent = data.ok
+            ? `✓ Обновлено событий: ${data.updated}`
+            : "Ошибка: " + data.error;
+    } catch(e) { statusEl.textContent = "Ошибка"; }
+    finally {
+        btn.disabled = false;
+        setTimeout(() => { statusEl.textContent = ""; }, 4000);
     }
 }
 
