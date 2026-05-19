@@ -25,40 +25,53 @@ def _get_service():
     return build("calendar", "v3", credentials=creds)
 
 
-_RRULE = {
-    "Ежедневно":   "RRULE:FREQ=DAILY",
-    "Еженедельно": "RRULE:FREQ=WEEKLY",
-    "Ежемесячно":  "RRULE:FREQ=MONTHLY",
+_RRULE_FREQ = {
+    "Ежедневно":   "DAILY",
+    "Еженедельно": "WEEKLY",
+    "Ежемесячно":  "MONTHLY",
 }
 
 
-def _build_body(title, deadline, priority=None, project=None, assignee=None, recurrence=None):
+def _build_body(title, deadline, priority=None, project=None, assignee=None,
+                recurrence=None, start_date=None):
+    """
+    start_date — дата начала события (для повторяющихся = сегодня).
+    deadline   — дедлайн задачи; для повторяющихся задач используется как UNTIL в RRULE.
+    """
     parts = []
     if assignee:
         parts.append(f"Исполнитель: {assignee}")
     if priority:
         parts.append(f"Приоритет: {priority}")
-    date_str = str(deadline)
+    if deadline:
+        parts.append(f"Дедлайн: {deadline}")
+
+    event_start = str(start_date) if start_date else str(deadline)
     body = {
         "summary": title,
         "description": "\n".join(parts),
-        "start": {"date": date_str},
-        "end": {"date": date_str},
+        "start": {"date": event_start},
+        "end":   {"date": event_start},
         "colorId": _PRIORITY_COLOR.get(priority, "0"),
     }
-    if recurrence and recurrence in _RRULE:
-        body["recurrence"] = [_RRULE[recurrence]]
+    if recurrence and recurrence in _RRULE_FREQ:
+        freq = _RRULE_FREQ[recurrence]
+        until = str(deadline).replace("-", "") if deadline else None
+        rrule = f"RRULE:FREQ={freq}" + (f";UNTIL={until}" if until else "")
+        body["recurrence"] = [rrule]
     return body
 
 
-def create_event(title, deadline, priority=None, project=None, assignee=None, recurrence=None):
+def create_event(title, deadline, priority=None, project=None, assignee=None,
+                 recurrence=None, start_date=None):
     service = _get_service()
     if not service or not deadline:
         return None
     try:
         event = service.events().insert(
             calendarId=CALENDAR_ID,
-            body=_build_body(title, deadline, priority, project, assignee, recurrence),
+            body=_build_body(title, deadline, priority, project, assignee,
+                             recurrence, start_date),
         ).execute()
         return event.get("id")
     except HttpError as e:
@@ -66,7 +79,8 @@ def create_event(title, deadline, priority=None, project=None, assignee=None, re
         return None
 
 
-def update_event(event_id, title, deadline, priority=None, project=None, assignee=None, recurrence=None):
+def update_event(event_id, title, deadline, priority=None, project=None, assignee=None,
+                 recurrence=None, start_date=None):
     service = _get_service()
     if not service or not event_id or not deadline:
         return False
@@ -74,7 +88,8 @@ def update_event(event_id, title, deadline, priority=None, project=None, assigne
         service.events().update(
             calendarId=CALENDAR_ID,
             eventId=event_id,
-            body=_build_body(title, deadline, priority, project, assignee, recurrence),
+            body=_build_body(title, deadline, priority, project, assignee,
+                             recurrence, start_date),
         ).execute()
         return True
     except HttpError as e:
